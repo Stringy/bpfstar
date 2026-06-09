@@ -68,6 +68,24 @@ val bpf_map_delete_elem
     (requires map_perm m ** (exists* kv. pts_to k kv))
     (ensures fun _ -> map_perm m ** (exists* kv. pts_to k kv))
 
+(* Convenience wrapper: look up by value.
+
+   Takes the key by value, allocates it on the stack, and
+   calls bpf_map_lookup_elem. Extracts to:
+     kt __key = k;
+     vt *result = bpf_map_lookup_elem(map, &__key);
+   which is the idiomatic BPF C pattern. *)
+val map_lookup
+  (#kt #vt: Type0)
+  (m: bpf_map kt vt)
+  (k: kt)
+  : stt (ref vt)
+    (requires map_perm m)
+    (ensures fun r ->
+      map_perm m **
+      (if is_null r then emp
+       else exists* v. map_value m r v))
+
 (* Release a borrowed map value pointer. *)
 val release_map_value
   (#kt #vt: Type0)

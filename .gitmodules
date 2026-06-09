@@ -1,3 +1,6 @@
 [submodule "fstar"]
 	path = fstar
 	url = git@github.com:stringy/fstar
+[submodule "libbpf"]
+	path = libbpf
+	url = https://github.com/libbpf/libbpf.git
