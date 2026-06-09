@@ -125,14 +125,24 @@ fn check_overlayfs_dedup (is_overlayfs: bool) (pid_tgid: UInt64.t)
   }
 }
 
-(* --- Main programme --- *)
+(* --- Main programme ---
+
+   BPF programme entry point for the LSM file_open hook.
+   The context is a pointer to struct file (opaque here since
+   we don't have CO-RE support yet to read kernel struct fields).
+
+   In a real programme, the context would be used with BPF_PROG:
+     SEC("lsm/file_open")
+     int BPF_PROG(trace_file_open, struct file* file) { ... }
+
+   For now we take the file pointer as a raw u64 and use
+   placeholder values for the fields we'd normally read via
+   BPF_CORE_READ. A future CO-RE library would provide typed
+   accessors. *)
 
 [@@ CSection "lsm/file_open"]
 fn trace_file_open
-    (is_creation: bool)
-    (is_overlayfs: bool)
-    (ino_nr: UInt64.t)
-    (dev_nr: UInt64.t)
+    (file: UInt64.t)   (* opaque struct file * *)
   requires
     map_perm inode_map **
     map_perm overlayfs_dedup **
@@ -145,6 +155,14 @@ fn trace_file_open
 {
   let pid_tgid = bpf_get_current_pid_tgid ();
   let pid = FStar.Int.Cast.uint64_to_uint32 (FStar.UInt64.shift_right pid_tgid 32ul);
+
+  (* In a real programme, these would be read from the file struct
+     via BPF_CORE_READ. For now, use the file pointer as a proxy
+     for the inode number, and 0 for the device. *)
+  let ino_nr = file;
+  let dev_nr = 0uL;
+  let is_creation = false;
+  let is_overlayfs = false;
 
   let event_type = if is_creation { file_activity_creation } else { file_activity_open };
 
