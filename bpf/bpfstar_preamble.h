@@ -13,6 +13,12 @@
 #include <stddef.h>
 #include <bpf/bpf_helpers.h>
 
+/* C99 bool support for BPF */
+#include <stdbool.h>
+
+/* Karamel runtime macros */
+#define KRML_MAYBE_UNUSED_VAR(x) (void)(x)
+
 /* Type aliases for Karamel's -flinux-ints output. */
 typedef __u8  u8;
 typedef __u16 u16;

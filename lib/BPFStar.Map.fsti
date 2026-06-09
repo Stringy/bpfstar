@@ -49,6 +49,31 @@ val map_lookup
       (if is_null r then emp
        else exists* v. map_value m r v))
 
+(* Convenience wrapper: update by value.
+
+   Takes key and value by value. The extraction plugin generates
+   code that puts them on the stack and passes addresses. *)
+val map_update
+  (#kt #vt: Type0)
+  (m: bpf_map kt vt)
+  (k: kt)
+  (v: vt)
+  (flags: UInt64.t)
+  : stt bpf_ret
+    (requires map_perm m)
+    (ensures fun _ -> map_perm m)
+
+(* Convenience wrapper: delete by value.
+
+   Takes key by value. *)
+val map_delete
+  (#kt #vt: Type0)
+  (m: bpf_map kt vt)
+  (k: kt)
+  : stt bpf_ret
+    (requires map_perm m)
+    (ensures fun _ -> map_perm m)
+
 (* Release a borrowed map value pointer. No-op at runtime. *)
 val release_map_value
   (#kt #vt: Type0)

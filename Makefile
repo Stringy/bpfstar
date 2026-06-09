@@ -50,22 +50,26 @@ endif
 verify:
 	$(MAKE) -C lib PULSE_ROOT=$(PULSE_ROOT)
 	$(MAKE) -C examples/minimal PULSE_ROOT=$(PULSE_ROOT) verify
+	$(MAKE) -C examples/file_monitor PULSE_ROOT=$(PULSE_ROOT) verify
 
 # Extract examples to C via Karamel
 .PHONY: extract
 extract:
 	$(MAKE) -C examples/minimal PULSE_ROOT=$(PULSE_ROOT) extract
+	$(MAKE) -C examples/file_monitor PULSE_ROOT=$(PULSE_ROOT) extract
 
 # Compile extracted C to BPF ELF objects
 .PHONY: bpf
 bpf:
 	$(MAKE) -C examples/minimal PULSE_ROOT=$(PULSE_ROOT) bpf
+	$(MAKE) -C examples/file_monitor PULSE_ROOT=$(PULSE_ROOT) bpf
 
 # Clean BPFStar build artefacts (does not clean fstar/)
 .PHONY: clean
 clean:
 	$(MAKE) -C lib clean
 	$(MAKE) -C examples/minimal clean
+	$(MAKE) -C examples/file_monitor clean
 
 # Deep clean: also clean F* and Pulse
 .PHONY: distclean

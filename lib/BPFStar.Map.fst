@@ -19,6 +19,8 @@ let map_perm #_ #_ _ = emp
 let map_value #_ #_ _ _ _ = emp
 
 let map_lookup #_ #_ _ _ = admit ()
+let map_update #_ #_ _ _ _ _ = admit ()
+let map_delete #_ #_ _ _ = admit ()
 let release_map_value #_ #_ _ _ = admit ()
 let read_map_value #_ #_ _ _ = admit ()
 let write_map_value #_ #_ _ _ _ = admit ()
