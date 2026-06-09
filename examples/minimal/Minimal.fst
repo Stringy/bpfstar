@@ -23,9 +23,12 @@ type event = {
   pid: UInt32.t;
 }
 
-(* Assume we have a PID filter map and a ring buffer. *)
-assume val pid_filter : bpf_map UInt32.t UInt32.t
-assume val events : bpf_ringbuf
+(* BPF map definitions -- these extract to SEC(".maps") globals *)
+[@@ CSection ".maps"]
+let pid_filter : bpf_map UInt32.t UInt32.t = define_hash_map 8192ul
+
+[@@ CSection ".maps"]
+let events : bpf_ringbuf = define_ringbuf 262144ul  (* 256 KB *)
 
 (* Size of event struct in bytes *)
 let event_size : UInt64.t = 16uL
@@ -39,7 +42,6 @@ fn trace_sys_enter ()
   let pid_tgid = bpf_get_current_pid_tgid ();
   let pid = FStar.Int.Cast.uint64_to_uint32 (FStar.UInt64.shift_right pid_tgid 32ul);
 
-  (* Look up PID in the filter map -- key passed by value *)
   let found = map_lookup pid_filter pid;
 
   if is_null found {

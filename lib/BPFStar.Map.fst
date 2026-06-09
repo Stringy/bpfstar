@@ -9,6 +9,12 @@ open FStar.Ghost
 open BPFStar.Types
 
 let bpf_map _ _ = unit
+
+let define_hash_map #_ #_ _ = admit ()
+let define_array_map #_ #_ _ = admit ()
+let define_lru_hash_map #_ #_ _ = admit ()
+let define_percpu_array_map #_ #_ _ = admit ()
+
 let map_perm #_ #_ _ = emp
 let map_value #_ #_ _ _ _ = emp
 

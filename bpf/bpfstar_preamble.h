@@ -9,6 +9,7 @@
 #define BPFSTAR_PREAMBLE_H
 
 #include <linux/types.h>
+#include <linux/bpf.h>
 #include <stddef.h>
 #include <bpf/bpf_helpers.h>
 

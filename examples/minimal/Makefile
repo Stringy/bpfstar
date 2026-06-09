@@ -33,6 +33,7 @@ CLANG ?= clang
 BPF_CFLAGS = -target bpf -O2 -g \
   -I $(BPFSTAR_ROOT)/bpf \
   -I $(BPFSTAR_ROOT)/libbpf/src \
+  -I $(BPFSTAR_ROOT)/libbpf/include/uapi \
   -I $(OUTPUT_DIR)
 
 $(OUTPUT_DIR)/%.bpf.o: $(OUTPUT_DIR)/%.c

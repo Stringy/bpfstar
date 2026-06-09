@@ -19,6 +19,16 @@ open FStar.Ghost
    map instances as globals. *)
 val bpf_ringbuf : Type0
 
+(* Ring buffer constructor. Creates a ring buffer with the
+   specified size in bytes. The extraction plugin emits the
+   BTF-style struct definition in a SEC(".maps") section.
+
+   Usage:
+     [@@ CSection ".maps"]
+     let events : bpf_ringbuf = define_ringbuf (256ul `UInt32.mul` 1024ul)
+*)
+val define_ringbuf (size: UInt32.t) : bpf_ringbuf
+
 (* Ownership of a ring buffer for performing operations. *)
 val ringbuf_perm (rb: bpf_ringbuf) : slprop
 

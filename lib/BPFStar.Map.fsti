@@ -12,6 +12,19 @@ open BPFStar.Types
 (* Abstract BPF map handle, parametric over key and value types. *)
 val bpf_map (kt: Type0) (vt: Type0) : Type0
 
+(* Map constructors. Each creates a map with the specified type
+   and max_entries. The extraction plugin (ExtractPulseBPF) emits
+   the BTF-style struct definition in a SEC(".maps") section.
+
+   Usage:
+     [@@ CSection ".maps"]
+     let my_map : bpf_map UInt32.t UInt64.t = define_hash_map 8192
+*)
+val define_hash_map (#kt #vt: Type0) (max_entries: UInt32.t) : bpf_map kt vt
+val define_array_map (#kt #vt: Type0) (max_entries: UInt32.t) : bpf_map kt vt
+val define_lru_hash_map (#kt #vt: Type0) (max_entries: UInt32.t) : bpf_map kt vt
+val define_percpu_array_map (#kt #vt: Type0) (max_entries: UInt32.t) : bpf_map kt vt
+
 (* Ownership of a BPF map. *)
 val map_perm (#kt #vt: Type0) (m: bpf_map kt vt) : slprop
 
