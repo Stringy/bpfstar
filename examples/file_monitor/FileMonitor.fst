@@ -137,6 +137,7 @@ fn trace_file_open
     map_perm inode_map **
     map_perm overlayfs_dedup **
     ringbuf_perm rb
+  returns r: Int32.t
   ensures
     map_perm inode_map **
     map_perm overlayfs_dedup **
@@ -151,21 +152,22 @@ fn trace_file_open
   let skip = check_overlayfs_dedup is_overlayfs pid_tgid;
 
   if skip {
-    ()
+    0l
   } else {
     let key : inode_key = { ino = ino_nr; dev = dev_nr };
 
     let monitored = is_inode_monitored key;
 
-    if monitored {
+    if not monitored {
+      0l
+    } else {
       if is_creation {
         inode_add key
       } else {
         ()
       };
-      submit_event event_type ino_nr dev_nr pid
-    } else {
-      ()
+      submit_event event_type ino_nr dev_nr pid;
+      0l
     }
   }
 }
