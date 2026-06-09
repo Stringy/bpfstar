@@ -39,36 +39,30 @@ fn trace_sys_enter ()
 {
   (* Get current PID -- upper 32 bits of pid_tgid *)
   let pid_tgid = bpf_get_current_pid_tgid ();
-  let pid = FStar.UInt32.uint_to_t (FStar.UInt64.v pid_tgid / 0x100000000);
+  let pid = FStar.Int.Cast.uint64_to_uint32 (FStar.UInt64.shift_right pid_tgid 32ul);
 
   (* Look up PID in the filter map *)
   let found = bpf_map_lookup_elem pid_filter pid;
 
-  match found {
-    Some p -> {
-      (* PID is in the filter map -- release the borrow
-         and write an event to the ring buffer *)
-      release_map_value pid_filter p;
+  if is_null found {
+    (* PID not in filter -- nothing to do *)
+    ()
+  } else {
+    (* PID is in the filter map -- release the borrow
+       and write an event to the ring buffer *)
+    release_map_value pid_filter found;
 
-      (* Reserve space in the ring buffer *)
-      let slot = bpf_ringbuf_reserve #event events 0uL;
+    (* Reserve space in the ring buffer *)
+    let slot = bpf_ringbuf_reserve #event events 0uL;
 
-      match slot {
-        Some e -> {
-          (* Write event data *)
-          let ts = bpf_ktime_get_boot_ns ();
-          e := { timestamp = ts; pid = pid };
-          bpf_ringbuf_submit e 0uL
-        }
-        None -> {
-          (* Ring buffer full -- nothing to do *)
-          ()
-        }
-      }
-    }
-    None -> {
-      (* PID not in filter -- nothing to do *)
+    if is_null slot {
+      (* Ring buffer full -- nothing to do *)
       ()
+    } else {
+      (* Write event data *)
+      let ts = bpf_ktime_get_boot_ns ();
+      slot := { timestamp = ts; pid = pid };
+      bpf_ringbuf_submit slot 0uL
     }
   }
 }

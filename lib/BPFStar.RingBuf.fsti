@@ -3,8 +3,8 @@
    Models BPF ring buffers using separation logic to enforce
    the reserve/submit/discard protocol:
 
-   1. Reserve space in the ring buffer (may fail -> option)
-   2. Write data into the reserved slot
+   1. Reserve space in the ring buffer (may fail -> null)
+   2. If non-null, write data into the reserved slot
    3. Submit (data becomes visible to userspace) or discard
 
    The ringbuf_reservation slprop is linear -- it must be
@@ -29,23 +29,20 @@ val ringbuf_reservation (#t: Type0) (p: ref t) : slprop
 
 (* Reserve space in a ring buffer.
 
-   Returns Some with a pointer to the reserved slot, or None
-   if the ring buffer is full. The reservation is a linear
-   resource that must be submitted or discarded.
-
-   flags: 0 for default, bpf_rb_no_wakeup to suppress
-   userspace notification. *)
+   Returns a pointer to the reserved slot, or null if the
+   ring buffer is full. The caller must check is_null before
+   use. When non-null, the reservation is a linear resource
+   that must be submitted or discarded. *)
 val bpf_ringbuf_reserve
   (#t: Type0)
   (rb: bpf_ringbuf)
   (flags: FStar.UInt64.t)
-  : stt (option (ref t))
+  : stt (ref t)
     (requires ringbuf_perm rb)
     (ensures fun r ->
       ringbuf_perm rb **
-      (match r with
-       | Some p -> ringbuf_reservation p ** (exists* v. pts_to p v)
-       | None -> emp))
+      (if is_null r then emp
+       else ringbuf_reservation r ** (exists* v. pts_to r v)))
 
 (* Submit a reserved ring buffer entry.
 
@@ -55,10 +52,9 @@ val bpf_ringbuf_reserve
 val bpf_ringbuf_submit
   (#t: Type0)
   (p: ref t)
-  (#v: erased t)
   (flags: FStar.UInt64.t)
   : stt unit
-    (requires ringbuf_reservation p ** pts_to p v)
+    (requires ringbuf_reservation p ** (exists* v. pts_to p v))
     (ensures fun _ -> emp)
 
 (* Discard a reserved ring buffer entry.
@@ -73,4 +69,3 @@ val bpf_ringbuf_discard
   : stt unit
     (requires ringbuf_reservation p)
     (ensures fun _ -> emp)
-
