@@ -24,7 +24,6 @@ $(OUTPUT_DIR)/Minimal.c: $(addprefix $(OUTPUT_DIR)/,\
 	BPFStar_Map.krml \
 	BPFStar_RingBuf.krml \
 	BPFStar_Types.krml \
-	BPFStar_Program.krml \
 	FStar_Pervasives.krml \
 	FStar_Pervasives_Native.krml \
 	FStar_Int_Cast.krml)

@@ -14,7 +14,7 @@ open BPFStar.Types
 open BPFStar.Map
 open BPFStar.RingBuf
 open BPFStar.Helpers
-open BPFStar.Program
+open FStar.Attributes
 
 (* Event structure sent to userspace via ring buffer *)
 noeq
@@ -31,7 +31,7 @@ assume val events : bpf_ringbuf
 let event_size : UInt64.t = 16uL
 
 (* The main BPF programme entry point *)
-[@@ bpf_section "tp/raw_syscalls/sys_enter"]
+[@@ CSection "tp/raw_syscalls/sys_enter"]
 fn trace_sys_enter ()
   requires map_perm pid_filter ** ringbuf_perm events
   ensures  map_perm pid_filter ** ringbuf_perm events

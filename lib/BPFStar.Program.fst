@@ -1,6 +1,3 @@
 (* BPFStar.Program -- implementation.
-   Attributes are purely compile-time annotations. *)
+   Section annotations use FStar.Attributes.CSection directly. *)
 module BPFStar.Program
-
-let bpf_section _ = ()
-let bpf_license _ = ()

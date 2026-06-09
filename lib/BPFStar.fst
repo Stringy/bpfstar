@@ -10,4 +10,3 @@ include BPFStar.Types
 include BPFStar.Map
 include BPFStar.RingBuf
 include BPFStar.Helpers
-include BPFStar.Program
