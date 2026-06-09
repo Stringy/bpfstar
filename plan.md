@@ -6,328 +6,287 @@ BPFStar is a Pulse library for writing formally verified BPF programmes.
 Programmes are written in Pulse's separation logic DSL, verified by F*, and
 extracted to BPF-compatible C that compiles with `clang -target bpf`.
 
-The library provides:
+## Current Status
 
-- Separation logic specifications for BPF maps, ring buffers, and helper
-  functions
-- C struct type definitions for BPF contexts and events (built on
-  `Pulse.C.Types`)
-- An extraction path to BPF-loadable ELF objects
+**Phases 1 and 2 are complete.** The full pipeline works end-to-end:
+
+```
+Minimal.fst  ->  F* verify  ->  .krml  ->  krml  ->  .c  ->  clang -target bpf  ->  .bpf.o
+```
+
+The generated `.bpf.o` has correct ELF sections (`.maps` for map definitions,
+named sections like `tp/raw_syscalls/sys_enter` for programmes) and is loadable
+by libbpf/aya.
 
 ## Repository Structure
 
 ```
 bpfstar/
-  fstar/                          # git submodule -> F* fork
+  fstar/                              # git submodule (F* fork, branch: bpfstar-extraction)
+    pulse/src/extraction/
+      ExtractPulseBPF.fst[i]          # BPF extraction plugin (~250 lines)
+    ulib/FStar.Attributes.fsti        # +CSection, +CVerbatim attributes
+    karamel/lib/
+      Common.ml                       # +Section, +Verbatim flags
+      CStarToC11.ml                   # section attribute emission
+      PrintC.ml                       # __attribute__((section(...))) output
+  libbpf/                             # git submodule (BPF helper headers)
   lib/
-    BPFStar.fst                   # Top-level module (re-exports)
-    BPFStar.Map.fsti              # BPF map types and operations
-    BPFStar.Map.fst
-    BPFStar.RingBuf.fsti          # Ring buffer with linear ownership
-    BPFStar.RingBuf.fst
-    BPFStar.Helpers.fsti          # BPF helper function specs
-    BPFStar.Helpers.fst
-    BPFStar.Types.fsti            # Common BPF types (context structs, scalars)
-    BPFStar.Types.fst
-    BPFStar.Program.fsti          # Programme entry point annotation
-    BPFStar.Program.fst
-    fstar.include                 # F* include path configuration
+    BPFStar.fst                       # top-level re-export
+    BPFStar.Map.fsti/fst              # map operations + definitions
+    BPFStar.RingBuf.fsti/fst          # ring buffer with linear ownership
+    BPFStar.Helpers.fsti/fst          # BPF helper function specs
+    BPFStar.Types.fsti/fst            # scalar types, flags, return codes
+    BPFStar.Program.fsti/fst          # documentation (CSection replaces bpf_section)
+  bpf/
+    bpfstar_preamble.h                # type aliases + licence
   examples/
-    minimal/                      # Minimal tracepoint programme
-    file_monitor/                 # File activity monitor (FACT-inspired)
+    minimal/                          # tracepoint PID filter
+    file_monitor/                     # (next: FACT trace_file_open port)
   Makefile
   plan.md
 ```
 
-## Background
+## Architecture
 
-### What We Learned from bpf-verifier
+### The Extraction Plugin (ExtractPulseBPF.fst)
 
-The [bpf-verifier](https://github.com/stringy/bpf-verifier) project proved
-that BPF programmes can be formally verified against specifications using F*.
-Key lessons:
+The core of BPFStar's extraction lives in a single F* file that registers
+as a pre-translation hook alongside ExtractPulse and ExtractPulseC. It
+handles three categories of translation:
 
-1. **"Rust computes, F* checks"** -- pushing analysis to Rust and having F*
-   validate witnesses avoided exponential blowup in the normaliser.
-2. **Layered safety** (stack bounds, type safety, null safety as independent
-   boolean checkers) worked well for separating concerns.
-3. **Path-based execution** for non-deterministic helpers (map lookups returning
-   NULL or a value) was essential for scalability.
-4. **The gap**: bpf-verifier verifies *compiled* BPF bytecode. It cannot help
-   you *write* correct BPF. Pulse can.
+**Expression hooks** (`register_pre_translate_expr`):
 
-The bpf-verifier already had an experimental Pulse helpers module
-(`BPF.Pulse.Helpers.fsti/fst`) modelling `bpf_ringbuf_reserve/submit` with
-separation logic predicates. BPFStar builds on this direction with a complete
-library design informed by real-world BPF programme analysis.
+| Pulse call | Generated Krml AST | C output |
+|---|---|---|
+| `bpf_get_current_pid_tgid ()` | `EApp("bpf_get_current_pid_tgid", [EUnit])` | `bpf_get_current_pid_tgid()` |
+| `map_lookup m k` | `ELet(__key = k, EApp("bpf_map_lookup_elem", [EAddrOf m, EAddrOf __key]))` | `u32 __key = k; bpf_map_lookup_elem(&m, &__key)` |
+| `release_map_value m p` | `EUnit` | *(erased)* |
+| `bpf_ringbuf_reserve rb sz fl` | `EApp("bpf_ringbuf_reserve", [EAddrOf rb, sz, fl])` | `bpf_ringbuf_reserve(&rb, sz, fl)` |
+| `bpf_ringbuf_submit p fl` | `EApp("bpf_ringbuf_submit", [p, fl])` | `bpf_ringbuf_submit(p, fl)` |
 
-### What Real-World BPF Programmes Need
+**Type hooks** (`register_pre_translate_type_without_decay`):
 
-Analysis of [stackrox/fact](https://github.com/stackrox/fact) (9 LSM
-programmes, file activity monitoring) and
-[falcosecurity/libs](https://github.com/falcosecurity/libs) (345 programmes,
-system call monitoring):
+| Pulse type | Krml type | C type |
+|---|---|---|
+| `bpf_map kt vt` | `TAny` | `void *` (opaque) |
+| `bpf_ringbuf` | `TAny` | `void *` (opaque) |
 
-| Feature | FACT | Falco | Pulse Support Today |
-|---------|------|-------|---------------------|
-| Map operations (lookup/update/delete) | Yes | Yes | No -- needs library |
-| Ring buffer (reserve/submit/discard) | Yes | Yes | No -- needs library |
-| BPF helpers (probe_read, pid, comm) | 17 helpers | 20+ helpers | No -- needs library |
-| C structs with field access | Yes | Yes | **Yes** -- `Pulse.C.Types.Struct` |
-| Bounded loops | bpf_loop | Static bounds | **Yes** -- `Pulse.Lib.Loops` |
-| Per-CPU scratch buffers (map-as-heap) | Yes | Yes (128KB) | No -- needs library |
-| NULL checks after map lookup | Yes | Yes | **Yes** -- `option` type |
-| Pointer arithmetic with bounds | Limited | Extensive | **Partial** -- `Pulse.Lib.ArrayPtr` |
-| Tail calls | No | 23 sites | No -- needs library |
-| CO-RE / BTF field access | Extensive | Extensive | No -- deferred |
-| Global variables (const volatile) | Yes | Yes | No -- needs extraction |
+**Let-binding hooks** (`register_pre_translate_let`):
 
-### Pulse Capabilities We Build On
+Map and ring buffer definitions are intercepted and emitted as `DGlobal`
+declarations with `Verbatim` + `Prologue` flags. The Prologue contains the
+BTF struct definition; Verbatim suppresses the normal `void *` declaration.
 
-Pulse already provides everything needed for the core library:
+| Pulse definition | C output |
+|---|---|
+| `let m = define_hash_map 8192ul` | `struct { __uint(type, BPF_MAP_TYPE_HASH); ... } m SEC(".maps");` |
+| `let rb = define_ringbuf 262144ul` | `struct { __uint(type, BPF_MAP_TYPE_RINGBUF); ... } rb SEC(".maps");` |
 
-- **`Pulse.C.Types.Struct`** -- C struct definitions with field access
-- **`Pulse.C.Types.Scalar`** -- Fixed-width integer types (U8, U16, U32, U64)
-- **`Pulse.C.Types.Array`** -- Fixed-size C arrays
-- **`Pulse.Lib.ArrayPtr`** -- Pointer arithmetic with bounds tracking
-- **`Pulse.Lib.Reference`** -- Mutable references with fractional permissions
-- **Separation logic** -- `slprop`, `**`, `exists*`, `emp`, `pure`
-- **`option` type** -- Natural model for nullable BPF returns
-- **Bounded loops** -- While loops with invariants and decreasing measures
-- **`stt_atomic`** -- Atomic actions (for helpers that don't modify programme state)
-- **C extraction via Karamel** -- Existing `.fst -> .krml -> .c` pipeline
+### F*/Karamel Extensions
 
-## Design Decisions
+Two new attributes added to the F*/Karamel pipeline:
+
+**CSection** -- places a declaration in a named ELF section:
+```fstar
+[@@ CSection "tp/raw_syscalls/sys_enter"]
+fn trace_sys_enter () ...
+```
+Flows through: `FStar.Attributes.CSection` -> ML `CSection` meta ->
+Krml `Section` flag -> Karamel `Section` flag -> `C11.extra.section` ->
+`__attribute__((section(...)))` in C output.
+
+**CVerbatim** -- suppresses the declaration, keeps only Prologue/Epilogue:
+```fstar
+[@@ CVerbatim; CPrologue "struct { ... } my_map SEC(\".maps\");"]
+let my_map = ...
+```
+Used internally by the extraction plugin for map definitions.
+
+### The Preamble
+
+`bpf/bpfstar_preamble.h` is minimal -- just type aliases (`u32`/`u64` etc.
+for Karamel's `-flinux-ints` output) and a licence declaration. All BPF
+helper translations are in the extraction plugin, not in C macros.
+
+### Karamel Flags
+
+The extraction uses these krml flags:
+- `-minimal` -- no krmllib dependency
+- `-skip-compilation` -- we compile with clang, not gcc
+- `-library 'BPFStar.*'` -- treat library as abstract
+- `-no-prefix Minimal` -- no module prefix on user code
+- `-flinux-ints` -- emit `u32`/`u64` instead of `uint32_t`/`uint64_t`
+- `-add-early-include '"bpfstar_preamble.h"'` -- inject preamble
+
+## The BPFStar Library
 
 ### Map Operations
 
-Map lookup returns `option (ref vt)`, forcing NULL checks via pattern matching:
+Map lookup takes the key by value. The extraction plugin handles
+stack-allocating the key and passing its address:
 
 ```fstar
-fn bpf_map_lookup_elem (#kt #vt: Type) (m: bpf_map kt vt) (k: ref kt)
-  requires map_perm m ** pts_to k kv
-  returns  r: option (ref vt)
-  ensures  map_perm m ** pts_to k kv **
-           (match r with
-            | Some p -> map_value_perm m p
-            | None -> emp)
+val map_lookup (#kt #vt: Type0) (m: bpf_map kt vt) (k: kt)
+  : stt (ref vt)
+    (requires map_perm m)
+    (ensures fun r ->
+      map_perm m **
+      (if is_null r then emp
+       else exists* v. map_value m r v))
 ```
 
-After lookup, the caller holds a `map_value_perm` -- a borrow from the map.
-This must be consumed before the map can be used for another operation. This
-models the BPF verifier's rule that map value pointers are only valid until the
-programme returns or the entry is deleted.
+The caller must check `is_null` before use. Non-null means you hold a
+`map_value` permission (a borrow from the map) that must be released.
 
-Map update and delete:
+### Map Definitions
 
 ```fstar
-fn bpf_map_update_elem (#kt #vt: Type) (m: bpf_map kt vt)
-    (k: ref kt) (v: ref vt) (flags: U64.t)
-  requires map_perm m ** pts_to k _ ** pts_to v _
-  returns  r: I32.t
-  ensures  map_perm m ** pts_to k _ ** pts_to v _
-
-fn bpf_map_delete_elem (#kt #vt: Type) (m: bpf_map kt vt) (k: ref kt)
-  requires map_perm m ** pts_to k _
-  returns  r: I32.t
-  ensures  map_perm m ** pts_to k _
+let pid_filter : bpf_map UInt32.t UInt32.t = define_hash_map 8192ul
+let events : bpf_ringbuf = define_ringbuf 262144ul
 ```
+
+Available map types: `define_hash_map`, `define_array_map`,
+`define_lru_hash_map`, `define_percpu_array_map`, `define_ringbuf`.
 
 ### Ring Buffer
 
-Ring buffer reservation produces a linear resource that must be submitted or
-discarded:
-
-```fstar
-fn bpf_ringbuf_reserve (#t: Type) (rb: bpf_ringbuf) (size: U32.t)
-  requires ringbuf_perm rb
-  returns  r: option (ref t)
-  ensures  ringbuf_perm rb **
-           (match r with
-            | Some p -> ringbuf_reservation p
-            | None -> emp)
-
-fn bpf_ringbuf_submit (#t: Type) (p: ref t)
-  requires ringbuf_reservation p ** pts_to p _
-  ensures  emp    // ownership consumed
-
-fn bpf_ringbuf_discard (#t: Type) (p: ref t)
-  requires ringbuf_reservation p
-  ensures  emp    // ownership consumed
-```
-
-The key insight: `ringbuf_reservation` is a linear slprop. Pulse's type system
-prevents forgetting to submit or discard -- the programme will not typecheck if
-the reservation is not consumed on every path.
+Ring buffer reservation returns a nullable pointer. The non-null case gives
+a linear `ringbuf_reservation` permission that must be consumed by `submit`
+or `discard` on every code path.
 
 ### Helper Functions
 
-Helpers are axiomatised (implemented via `admit()`) since they are opaque BPF VM
-operations. Extraction emits calls to the real BPF helpers.
+10 BPF helper functions are specified. All are axiomatised (`admit()`) since
+they are opaque BPF VM operations. The extraction plugin emits direct calls
+to the real BPF helper functions.
 
-Three categories:
+### Separation Logic Guarantees
 
-**Pure queries** (no pre/postcondition beyond emp):
+The library enforces at verification time:
+- **Null safety**: map lookup and ringbuf reserve return nullable refs;
+  you cannot dereference without checking `is_null`
+- **Resource linearity**: ringbuf reservations must be submitted or
+  discarded on every code path
+- **Borrow discipline**: map value pointers must be released before the
+  programme returns
 
-- `bpf_get_current_pid_tgid`
-- `bpf_get_current_uid_gid`
-- `bpf_ktime_get_boot_ns`
-- `bpf_get_smp_processor_id`
-- `bpf_get_prandom_u32`
-
-**Memory readers** (require destination buffer ownership):
-
-- `bpf_probe_read_kernel`
-- `bpf_probe_read_user`
-- `bpf_probe_read_kernel_str`
-- `bpf_get_current_comm`
-
-**Map/ringbuf operations** (covered above):
-
-- `bpf_map_lookup_elem`, `bpf_map_update_elem`, `bpf_map_delete_elem`
-- `bpf_ringbuf_reserve`, `bpf_ringbuf_submit`, `bpf_ringbuf_discard`
-
-### Programme Entry Points
-
-BPF programmes need ELF section annotations. We model this as an F* attribute:
-
-```fstar
-[@@ bpf_section "lsm/file_open"]
-fn trace_file_open (file: lsm_file_open_ctx)
-  requires ctx_perm file
-  returns  r: I32.t
-  ensures  emp
-```
-
-During extraction, the `bpf_section` attribute emits `SEC("lsm/file_open")` on
-the C function. This requires a small patch to the F* fork's C extraction
-backend -- the only Pulse-side change in Phase 1.
-
-### Context Types
-
-Each BPF programme type receives a different context. We define these as Pulse C
-structs using the existing `Pulse.C.Types` framework:
-
-```fstar
-// LSM file_open context
-define_struct "lsm_file_open_ctx" [
-  ("file", scalar (ptr file_struct_t));
-]
-
-// Tracepoint context for sys_enter
-define_struct "tp_sys_enter_ctx" [
-  ("id",   scalar U64.t);
-  ("args", array U64.t 6);
-]
-```
-
-These are purely library-level -- no Pulse changes needed.
-
-### What We Do NOT Model Initially
-
-- **CO-RE**: Programmes target a specific kernel version. CO-RE relocations
-  happen naturally when `clang -target bpf -g` compiles against a `vmlinux.h`
-  with `preserve_access_index`.
-- **Tail calls**: Deferred to Phase 4. Requires cross-programme reasoning.
-- **Per-CPU map semantics**: Treated as regular maps initially. Per-CPU is a
-  deployment optimisation, not a correctness concern for single-programme
-  verification.
-- **`bpf_loop` callbacks**: Deferred. Use Pulse's native bounded loops instead.
-- **Architecture-conditional compilation**: Deferred. Target x86_64 initially.
-
-## Extraction Pipeline
+## Build System
 
 ```
-.fsti/.fst  ->  F* check  ->  Karamel (.krml)  ->  C (.c)  ->  clang -target bpf  ->  .bpf.o
+make fstar      # build F*/Pulse from submodule (~20 min first time, ~7s incremental)
+make verify     # verify library and examples
+make extract    # extract to C via Karamel
+make bpf        # compile to BPF ELF objects
+make all        # everything
+make clean      # clean BPFStar artefacts
+make distclean  # also clean F*/Pulse
 ```
 
-The extracted C needs:
+## Completed Work
 
-1. `#include "vmlinux.h"` and `#include <bpf/bpf_helpers.h>` preamble
-2. `SEC("...")` annotations on entry points (from `bpf_section` attribute)
-3. `char LICENSE[] SEC("license") = "Dual BSD/GPL";`
-4. `__always_inline` on non-entry-point functions
-5. BPF helper calls emitted as direct function calls (declared in
-   `bpf_helpers.h`)
+### Phase 1: Foundation (DONE)
 
-Items 1-4 require a small BPF-aware post-processing step or Karamel extension.
-Item 5 should work naturally if the extraction maps `BPFStar.Helpers.*` to the
-correct C function names.
+- BPFStar library with separation logic specs
+- Minimal tracepoint example verified in Pulse
+- F* submodule with Karamel build
 
-## Phased Implementation
+### Phase 2: Extraction (DONE)
 
-### Phase 1: Foundation
+- ExtractPulseBPF extraction plugin
+- CSection attribute for ELF sections
+- CVerbatim flag for map definitions
+- End-to-end pipeline: `.fst` -> `.bpf.o`
+- No post-processing, no macros
+- libbpf submodule for BPF headers
+- Make targets for full pipeline
 
-**Goal:** Write and verify a minimal BPF programme in Pulse.
-
-1. Create repo, add F* submodule, set up Makefile
-2. Implement `BPFStar.Map` -- map type, lookup/update/delete with sep logic
-   specs
-3. Implement `BPFStar.RingBuf` -- reserve/submit/discard with linear ownership
-4. Implement `BPFStar.Helpers` -- 10 core helpers (pid, time, comm, probe_read,
-   map ops, ringbuf ops)
-5. Implement `BPFStar.Types` -- context types for tracepoint and LSM
-6. Implement `BPFStar.Program` -- entry point annotation
-7. Write `examples/minimal/` -- a tracepoint that reads pid, checks a map,
-   writes to ringbuf
-8. Verify it typechecks in F*/Pulse
-
-**Milestone:** Pulse verifies a real BPF programme specification.
-
-### Phase 2: Extraction
-
-**Goal:** Extract the Phase 1 programme to compilable BPF C.
-
-1. Add `bpf_section` attribute support to F* fork's extraction backend
-2. Create BPF-specific Karamel post-processing (preamble, LICENSE, inline
-   annotations)
-3. Map `BPFStar.Helpers.*` to C helper function names in extraction
-4. Build end-to-end pipeline: `.fst -> .c -> .bpf.o`
-5. Test: load the compiled object with aya or libbpf
-
-**Milestone:** End-to-end from Pulse source to loadable BPF object.
+## Next Steps
 
 ### Phase 3: Real-World Programme
 
-**Goal:** Port a real FACT programme to Pulse.
+**Goal:** Port `trace_file_open` from stackrox/fact to Pulse.
 
-1. Port `trace_file_open` from stackrox/fact
-2. Model FACT's event struct, inode_key, process info
-3. Handle overlayfs deduplication pattern (map lookup + conditional
-   update/delete)
-4. Handle path resolution with bounded loops
-5. Verify functional properties (events contain correct data, maps maintained
-   correctly)
+This validates the library against production BPF code. Key challenges:
 
-**Milestone:** A production-grade BPF programme written and verified in Pulse.
+1. **LSM hook context** -- `trace_file_open` receives `struct file *` as
+   context. Need to model kernel struct types or use opaque pointers.
+
+2. **Multiple map operations** -- FACT uses overlayfs dedup (LRU hash
+   lookup + conditional update/delete), inode tracking (hash map), and
+   path prefix matching (LPM trie).
+
+3. **Event structs** -- FACT's `event_t` has nested structs (`process_t`
+   with `lineage_t`), variable-length strings, and a union for
+   event-specific data.
+
+4. **Helper functions** -- needs `bpf_get_current_task_btf`,
+   `bpf_probe_read_str`, and `bpf_d_path` beyond what we currently model.
+
+5. **Bounded loops** -- process lineage traversal (`for i < LINEAGE_MAX`)
+   and cgroup path walking.
+
+6. **Metrics tracking** -- per-CPU array map for counters.
 
 ### Phase 4: Advanced Features
 
-1. Tail call support (programme arrays, cross-programme state via maps)
-2. Per-CPU map semantics
-3. CO-RE library (`bpf_core_read`, `bpf_core_field_exists`)
-4. `bpf_loop` callback support
-5. BPF-specific refinement types (stack size < 512, bounded loop counts)
-6. Additional programme types (XDP, TC, fentry/fexit)
+1. **CO-RE support** -- `BPF_CORE_READ`, `bpf_core_field_exists` for
+   kernel version portability
+2. **Tail calls** -- programme arrays, cross-programme state via maps
+3. **Per-CPU map semantics** -- model the no-contention guarantee
+4. **Bounded loop verification** -- prove termination via Pulse invariants
+5. **`bpf_loop` callback support** -- model the callback pattern
+6. **Additional programme types** -- XDP, TC, fentry/fexit
+7. **Real separation logic proofs** -- move beyond `admit()` for library
+   operations; prove resource linearity formally
 
-## Key Risks
+## Key Risks (Updated)
 
-1. **Karamel extraction for BPF C**: Karamel targets standard C. BPF C has
-   restrictions (no recursion, no function pointers, 512-byte stack). If Karamel
-   generates non-BPF-compatible C, we may need a post-processing pass or a
-   dedicated BPF extraction backend (like pulse2rust but for BPF).
+1. ~~**Karamel extraction for BPF C**~~ -- RESOLVED. The ExtractPulseBPF
+   plugin handles all BPF-specific translation. No post-processing needed.
 
-2. **Pulse C types vs BPF struct layout**: BPF structs must have exact memory
-   layout matching kernel expectations. We need to verify that
-   `Pulse.C.Types.Struct` extraction produces correctly-laid-out C structs.
+2. **Pulse C types vs BPF struct layout** -- still relevant for Phase 3.
+   FACT's event structs need exact layout matching. May need to use
+   `Pulse.C.Types.Struct` or manual field offsets.
 
-3. **Map value lifetime**: BPF map value pointers are invalidated when the
-   programme returns. Pulse's separation logic naturally models this (the
-   `map_value_perm` is consumed), but we need to ensure the extraction does not
-   introduce use-after-return patterns.
+3. **Map value lifetime** -- the separation logic models this correctly
+   (`map_value` permission must be released). Extraction preserves the
+   pattern via pointer null-check + inline use.
 
-4. **Verification performance**: Large BPF programmes (like Falco's `execve`
-   handler split across 3 tail-called programmes) may stress F*'s normaliser.
-   The bpf-verifier project showed that path explosion is the main bottleneck --
-   Pulse's approach should avoid this since we are verifying source-level code,
-   not enumerating bytecode paths.
+4. **OCaml Marshal constructor alignment** -- the Krml flag type in F*
+   must have constructor indices matching Karamel's `Common.flag` type.
+   Padding constructors are used to maintain alignment. This is fragile
+   and should be documented as a maintenance constraint.
+
+5. **Verification performance** -- not yet tested on large programmes.
+   Phase 3 will be the first real stress test.
+
+## Lessons Learned
+
+1. **The extraction plugin approach works well.** Rather than modifying
+   Karamel's core, registering pre-translation hooks lets us intercept
+   BPF-specific patterns and emit the correct Krml AST. This keeps
+   changes contained and avoids breaking non-BPF extraction.
+
+2. **API design must match the C calling convention.** Early attempts
+   used Pulse's `option` type for nullable returns and pass-by-value
+   for map keys. These produced valid F* but un-extractable C. Switching
+   to nullable `ref` returns and pointer-based keys (with the plugin
+   handling `&`) produced clean extraction.
+
+3. **Karamel's flag system is powerful but fragile.** Adding new flags
+   requires careful constructor alignment between F* and Karamel's
+   OCaml types (they're marshalled as binary values, not JSON). New
+   attributes (CSection, CVerbatim) work well but need padding
+   constructors to maintain index alignment.
+
+4. **libbpf headers are the right dependency.** Hand-declaring BPF
+   helpers in a preamble was brittle. Using libbpf's `bpf_helpers.h`
+   and `bpf_helper_defs.h` gives us all helper declarations, the SEC
+   macro, and BTF macros (`__uint`, `__type`) for free.
+
+5. **Verbatim declarations solve the BTF struct problem.** BPF map
+   definitions can't be expressed through Karamel's normal `DGlobal`
+   AST node. Emitting the full definition as Prologue text and
+   suppressing the generated declaration (via the new Verbatim flag)
+   is clean and works with the existing pipeline.
