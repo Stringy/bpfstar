@@ -2,14 +2,16 @@
 #
 # Usage:
 #   make fstar     # Build F* and Pulse from submodule (first time only)
-#   make verify    # Verify the BPFStar library
-#   make examples  # Verify the examples
-#   make all       # Build everything (fstar + verify + examples)
+#   make verify    # Verify the BPFStar library and examples
+#   make extract   # Extract examples to C
+#   make bpf       # Compile extracted C to BPF ELF objects
+#   make all       # Everything: fstar + verify + extract + bpf
 #   make clean     # Clean BPFStar build artefacts
 #
 # Prerequisites:
 #   - OCaml 4.14+ and opam (for building F*)
 #   - z3-4.8.5 and z3-4.13.3 on PATH
+#   - clang with BPF target support (for make bpf)
 #   - git submodule update --init --recursive
 #
 # The first `make fstar` takes ~15-20 minutes (3-stage bootstrap
@@ -31,14 +33,10 @@ include $(PULSE_ROOT)/mk/common.mk
 .DEFAULT_GOAL := verify
 
 .PHONY: all
-all: fstar verify examples
+all: fstar verify extract bpf
 
 # Build F* and Pulse from the submodule.
 # Only needed once, or after updating the fstar submodule.
-#
-# Pass FSTAR_SYSTEM_EXE=/path/to/fstar.exe to skip the stage0
-# bootstrap by reusing an existing fstar.exe. Any reasonably
-# recent version works (it only needs to bootstrap stage1).
 .PHONY: fstar
 fstar:
 ifdef FSTAR_SYSTEM_EXE
@@ -51,11 +49,17 @@ endif
 .PHONY: verify
 verify:
 	$(MAKE) -C lib PULSE_ROOT=$(PULSE_ROOT)
+	$(MAKE) -C examples/minimal PULSE_ROOT=$(PULSE_ROOT) verify
 
-# Verify the examples
-.PHONY: examples
-examples:
-	$(MAKE) -C examples/minimal PULSE_ROOT=$(PULSE_ROOT)
+# Extract examples to C via Karamel
+.PHONY: extract
+extract:
+	$(MAKE) -C examples/minimal PULSE_ROOT=$(PULSE_ROOT) extract
+
+# Compile extracted C to BPF ELF objects
+.PHONY: bpf
+bpf:
+	$(MAKE) -C examples/minimal PULSE_ROOT=$(PULSE_ROOT) bpf
 
 # Clean BPFStar build artefacts (does not clean fstar/)
 .PHONY: clean
