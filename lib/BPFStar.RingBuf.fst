@@ -11,6 +11,6 @@ let bpf_ringbuf = unit
 let ringbuf_perm _ = emp
 let ringbuf_reservation #_ _ = emp
 
-let bpf_ringbuf_reserve #_ _ _ = admit ()
+let bpf_ringbuf_reserve #_ _ _ _ = admit ()
 let bpf_ringbuf_submit #_ _ _ = admit ()
 let bpf_ringbuf_discard #_ _ _ = admit ()

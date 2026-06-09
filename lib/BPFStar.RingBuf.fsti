@@ -33,9 +33,16 @@ val ringbuf_reservation (#t: Type0) (p: ref t) : slprop
    ring buffer is full. The caller must check is_null before
    use. When non-null, the reservation is a linear resource
    that must be submitted or discarded. *)
+(* Reserve space in a ring buffer.
+
+   Takes the ring buffer, the size in bytes to reserve, and
+   flags. Returns a pointer to the reserved slot, or null if
+   the ring buffer is full. Matches the BPF C convention:
+     void *bpf_ringbuf_reserve(void *ringbuf, __u64 size, __u64 flags) *)
 val bpf_ringbuf_reserve
   (#t: Type0)
   (rb: bpf_ringbuf)
+  (size: FStar.UInt64.t)
   (flags: FStar.UInt64.t)
   : stt (ref t)
     (requires ringbuf_perm rb)

@@ -25,41 +25,40 @@ type event = {
   pid: UInt32.t;
 }
 
-(* Assume we have a PID filter map and a ring buffer.
-   In a real programme these would be declared as BPF map
-   globals and set up by the loader. *)
+(* Assume we have a PID filter map and a ring buffer. *)
 assume val pid_filter : bpf_map UInt32.t UInt32.t
 assume val events : bpf_ringbuf
 
+(* Size of event struct in bytes -- passed to bpf_ringbuf_reserve *)
+let event_size : UInt64.t = 16uL
+
 (* The main BPF programme entry point *)
 [@@ bpf_section "tp/raw_syscalls/sys_enter"]
-fn trace_sys_enter ()
-  requires map_perm pid_filter ** ringbuf_perm events
-  ensures  map_perm pid_filter ** ringbuf_perm events
+fn trace_sys_enter (key: ref UInt32.t)
+  requires map_perm pid_filter ** ringbuf_perm events ** (exists* v. pts_to key v)
+  ensures  map_perm pid_filter ** ringbuf_perm events ** (exists* v. pts_to key v)
 {
   (* Get current PID -- upper 32 bits of pid_tgid *)
   let pid_tgid = bpf_get_current_pid_tgid ();
   let pid = FStar.Int.Cast.uint64_to_uint32 (FStar.UInt64.shift_right pid_tgid 32ul);
 
-  (* Look up PID in the filter map *)
-  let found = bpf_map_lookup_elem pid_filter pid;
+  (* Store the PID in the key ref for map lookup *)
+  key := pid;
+
+  (* Look up PID in the filter map -- key is passed by pointer *)
+  let found = bpf_map_lookup_elem pid_filter key;
 
   if is_null found {
-    (* PID not in filter -- nothing to do *)
     ()
   } else {
-    (* PID is in the filter map -- release the borrow
-       and write an event to the ring buffer *)
     release_map_value pid_filter found;
 
     (* Reserve space in the ring buffer *)
-    let slot = bpf_ringbuf_reserve #event events 0uL;
+    let slot = bpf_ringbuf_reserve #event events event_size 0uL;
 
     if is_null slot {
-      (* Ring buffer full -- nothing to do *)
       ()
     } else {
-      (* Write event data *)
       let ts = bpf_ktime_get_boot_ns ();
       slot := { timestamp = ts; pid = pid };
       bpf_ringbuf_submit slot 0uL

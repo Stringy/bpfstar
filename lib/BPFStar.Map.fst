@@ -1,8 +1,7 @@
 (* BPFStar.Map -- implementation.
 
    All map operations are axiomatised (admit) since they are
-   opaque BPF VM operations. The real implementations come from
-   the BPF helper functions at runtime. *)
+   opaque BPF VM operations. *)
 module BPFStar.Map
 
 open Pulse.Lib.Pervasives
