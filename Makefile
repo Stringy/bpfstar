@@ -1,30 +1,35 @@
 # BPFStar: Verified BPF programmes via Pulse
 #
-# This Makefile follows the Pulse build conventions. It assumes that the
-# F* submodule (fstar/) has been built and the Pulse library installed
-# into fstar/pulse/out/.
-#
 # Usage:
-#   make pulse     # Build the Pulse plugin and library (first time only)
+#   make fstar     # Build F* and Pulse from submodule (first time only)
 #   make verify    # Verify the BPFStar library
 #   make examples  # Verify the examples
+#   make all       # Build everything (fstar + verify + examples)
 #   make clean     # Clean BPFStar build artefacts
 #
 # Prerequisites:
-#   - fstar.exe on PATH (or set FSTAR_EXE)
-#   - The fstar/ submodule initialised (git submodule update --init)
+#   - OCaml 4.14+ and opam (for building F*)
+#   - z3-4.8.5 and z3-4.13.3 on PATH
+#   - git submodule update --init --recursive
 
-PULSE_ROOT := $(CURDIR)/fstar/pulse
-FSTAR_EXE ?= fstar.exe
+FSTAR_ROOT := $(CURDIR)/fstar
+PULSE_ROOT := $(FSTAR_ROOT)/pulse
+
+# Use the submodule's fstar.exe
+export PATH := $(FSTAR_ROOT)/out/bin:$(PATH)
 
 include $(PULSE_ROOT)/mk/common.mk
 
 .DEFAULT_GOAL := verify
 
-# Build Pulse (only needed once, or after fstar/ submodule updates)
-.PHONY: pulse
-pulse:
-	$(MAKE) -C $(PULSE_ROOT)
+.PHONY: all
+all: fstar verify examples
+
+# Build F* and Pulse from the submodule.
+# Only needed once, or after updating the fstar submodule.
+.PHONY: fstar
+fstar:
+	$(MAKE) -C $(FSTAR_ROOT) -j$$(nproc)
 
 # Verify the BPFStar library
 .PHONY: verify
@@ -33,7 +38,7 @@ verify:
 
 # Verify the examples
 .PHONY: examples
-examples: verify
+examples:
 	$(MAKE) -C examples/minimal PULSE_ROOT=$(PULSE_ROOT)
 
 # Clean BPFStar build artefacts (does not clean fstar/)
@@ -42,7 +47,7 @@ clean:
 	$(MAKE) -C lib clean
 	$(MAKE) -C examples/minimal clean
 
-# Deep clean: also clean fstar/pulse
+# Deep clean: also clean F* and Pulse
 .PHONY: distclean
 distclean: clean
-	$(MAKE) -C $(PULSE_ROOT) clean
+	$(MAKE) -C $(FSTAR_ROOT) clean
