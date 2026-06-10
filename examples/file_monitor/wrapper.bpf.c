@@ -1,8 +1,8 @@
-/* BPF_PROG entry point wrappers.
-   These provide typed context access via the BPF_PROG macro and
-   forward to the verified inner functions extracted from Pulse. */
+/* BPF programme: wrapper + extracted verified code.
+   Includes the extracted C directly so everything compiles
+   into a single BPF ELF object. */
 
-#include "FileMonitor.h"
+#include "FileMonitor.c"
 #include <bpf/bpf_tracing.h>
 
 SEC("lsm/file_open")
