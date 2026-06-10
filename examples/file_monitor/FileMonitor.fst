@@ -140,8 +140,10 @@ fn check_overlayfs_dedup (is_overlayfs: bool) (pid_tgid: UInt64.t)
    BPF_CORE_READ. A future CO-RE library would provide typed
    accessors. *)
 
-[@@ CSection "lsm/file_open"]
-fn trace_file_open
+(* The inner function that contains the verified logic.
+   A thin BPF_PROG wrapper (in wrapper.bpf.c) calls this with
+   the typed context cast to void*. *)
+fn __bpfstar_trace_file_open
     (file: ctx_ptr)    (* struct file * -- opaque kernel pointer *)
   requires
     map_perm inode_map **

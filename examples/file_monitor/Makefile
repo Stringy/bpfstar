@@ -39,7 +39,12 @@ $(OUTPUT_DIR)/%.bpf.o: $(OUTPUT_DIR)/%.c
 	$(call msg, "BPF", $(notdir $@))
 	$(CLANG) $(BPF_CFLAGS) -c $< -o $@
 
+# Compile the BPF_PROG wrapper alongside the extracted C
+$(OUTPUT_DIR)/wrapper.bpf.o: wrapper.bpf.c $(OUTPUT_DIR)/FileMonitor.c
+	$(call msg, "BPF", $(notdir $@))
+	$(CLANG) $(BPF_CFLAGS) -c $< -o $@
+
 .PHONY: bpf
-bpf: $(OUTPUT_DIR)/FileMonitor.bpf.o
+bpf: $(OUTPUT_DIR)/FileMonitor.bpf.o $(OUTPUT_DIR)/wrapper.bpf.o
 
 include $(PULSE_ROOT)/mk/test.mk
