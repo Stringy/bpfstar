@@ -45,7 +45,7 @@ let overlayfs_dedup : bpf_map UInt64.t UInt8.t = define_lru_hash_map 256ul
 [@@ CSection ".maps"]
 let rb : bpf_ringbuf = define_ringbuf 8388608ul
 
-let file_event_size : UInt64.t = 40uL
+
 
 (* --- Helper: check if inode is monitored --- *)
 
@@ -83,7 +83,7 @@ fn submit_event
   requires ringbuf_perm rb
   ensures ringbuf_perm rb
 {
-  let e = bpf_ringbuf_reserve #file_event rb file_event_size 0uL;
+  let e = bpf_ringbuf_reserve #file_event rb 40uL 0uL;
   if is_null e {
     ()
   } else {

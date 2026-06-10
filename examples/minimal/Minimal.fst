@@ -25,13 +25,13 @@ let pid_filter : bpf_map UInt32.t UInt32.t = define_hash_map 8192ul
 [@@ CSection ".maps"]
 let events : bpf_ringbuf = define_ringbuf 262144ul
 
-let event_size : UInt64.t = 16uL
+
 
 fn submit_pid_event (pid: UInt32.t)
   requires ringbuf_perm events
   ensures ringbuf_perm events
 {
-  let e = bpf_ringbuf_reserve #event events event_size 0uL;
+  let e = bpf_ringbuf_reserve #event events 16uL 0uL;
   if is_null e {
     ()
   } else {
