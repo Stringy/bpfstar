@@ -45,7 +45,7 @@ fn submit_pid_event (pid: UInt32.t)
    ctx is the raw tracepoint context pointer. In a real programme
    this would be used with BPF_PROG macro for typed access. *)
 [@@ CSection "tp/raw_syscalls/sys_enter"]
-fn trace_sys_enter (ctx: UInt64.t)
+fn trace_sys_enter (ctx: ctx_ptr)
   requires map_perm pid_filter ** ringbuf_perm events
   returns r: Int32.t
   ensures  map_perm pid_filter ** ringbuf_perm events

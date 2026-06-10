@@ -1,3 +1,4 @@
-(* BPFStar.Types -- implementation.
-   All definitions are in the interface. *)
+(* BPFStar.Types -- implementation. *)
 module BPFStar.Types
+
+let ctx_ptr = unit

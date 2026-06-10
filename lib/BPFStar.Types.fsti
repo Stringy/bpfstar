@@ -21,6 +21,12 @@ let bpf_rb_force_wakeup : UInt64.t = 2uL
 (* BPF helper return: 0 on success, negative on error *)
 type bpf_ret = Int32.t
 
+(* Opaque kernel pointer type for BPF programme context arguments.
+   Extracts to void* in C. Used as the parameter type for BPF
+   programme entry points -- the actual kernel struct type is
+   provided by the BPF_PROG wrapper macro. *)
+val ctx_ptr : Type0
+
 let bpf_ok : bpf_ret = 0l
 
 (* Predicate for successful BPF helper returns *)

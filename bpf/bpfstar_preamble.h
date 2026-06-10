@@ -12,6 +12,7 @@
 #include <linux/bpf.h>
 #include <stddef.h>
 #include <bpf/bpf_helpers.h>
+#include <bpf/bpf_tracing.h>
 
 /* C99 bool support for BPF */
 #include <stdbool.h>

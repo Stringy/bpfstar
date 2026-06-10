@@ -142,7 +142,7 @@ fn check_overlayfs_dedup (is_overlayfs: bool) (pid_tgid: UInt64.t)
 
 [@@ CSection "lsm/file_open"]
 fn trace_file_open
-    (file: UInt64.t)   (* opaque struct file * *)
+    (file: ctx_ptr)    (* struct file * -- opaque kernel pointer *)
   requires
     map_perm inode_map **
     map_perm overlayfs_dedup **
@@ -157,9 +157,11 @@ fn trace_file_open
   let pid = FStar.Int.Cast.uint64_to_uint32 (FStar.UInt64.shift_right pid_tgid 32ul);
 
   (* In a real programme, these would be read from the file struct
-     via BPF_CORE_READ. For now, use the file pointer as a proxy
-     for the inode number, and 0 for the device. *)
-  let ino_nr = file;
+     via BPF_CORE_READ, e.g.:
+       let ino_nr = core_read file ["f_inode"; "i_ino"];
+       let dev_nr = core_read file ["f_inode"; "i_sb"; "s_dev"];
+     For now, use placeholder values. *)
+  let ino_nr = 0uL;
   let dev_nr = 0uL;
   let is_creation = false;
   let is_overlayfs = false;
