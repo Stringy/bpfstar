@@ -201,65 +201,82 @@ make distclean  # also clean F*/Pulse
 - libbpf submodule for BPF headers
 - Make targets for full pipeline
 
+### Phase 3: Real-World Programme (DONE - simplified)
+
+- Ported FACT's `trace_file_open` control flow to Pulse
+- Overlayfs deduplication pattern (LRU hash: lookup + update + delete)
+- Inode tracking (hash map: lookup + update)
+- Ring buffer event submission (reserve + write + submit)
+- Multiple map definitions in `.maps` section
+- `map_update` and `map_delete` convenience wrappers
+- Programme entry points with correct return type (`Int32.t` / `s32`)
+  and single context parameter (`UInt64.t` / `u64`)
+
+**What was simplified:** CO-RE reads (`BPF_CORE_READ`) for kernel struct
+field access are not yet supported. The file monitor uses placeholder
+values for inode number and device instead of reading from the kernel
+`struct file`. Process info filling, path resolution, and metrics
+tracking were also omitted. These need additional library support.
+
 ## Next Steps
 
-### Phase 3: Real-World Programme
+### Phase 3.5: BPF_PROG and CO-RE (in progress)
 
-**Goal:** Port `trace_file_open` from stackrox/fact to Pulse.
+**Goal:** Support typed context access for programme entry points.
 
-This validates the library against production BPF code. Key challenges:
+1. **BPF_PROG macro** -- generate `SEC("...") int BPF_PROG(name, args)`
+   instead of raw `int name(u64 ctx)`. This gives typed access to hook
+   arguments without manual casting. Requires extraction plugin changes
+   to emit the macro invocation.
 
-1. **LSM hook context** -- `trace_file_open` receives `struct file *` as
-   context. Need to model kernel struct types or use opaque pointers.
-
-2. **Multiple map operations** -- FACT uses overlayfs dedup (LRU hash
-   lookup + conditional update/delete), inode tracking (hash map), and
-   path prefix matching (LPM trie).
-
-3. **Event structs** -- FACT's `event_t` has nested structs (`process_t`
-   with `lineage_t`), variable-length strings, and a union for
-   event-specific data.
-
-4. **Helper functions** -- needs `bpf_get_current_task_btf`,
-   `bpf_probe_read_str`, and `bpf_d_path` beyond what we currently model.
-
-5. **Bounded loops** -- process lineage traversal (`for i < LINEAGE_MAX`)
-   and cgroup path walking.
-
-6. **Metrics tracking** -- per-CPU array map for counters.
+2. **CO-RE field access** -- `BPF_CORE_READ(ptr, field1, field2)` for
+   reading kernel struct fields with BTF relocation. Needs:
+   - A `kptr` type for kernel pointers
+   - `core_read` helper that extracts to `BPF_CORE_READ()`
+   - Field accessor definitions for kernel structs (at least `struct file`)
 
 ### Phase 4: Advanced Features
 
-1. **CO-RE support** -- `BPF_CORE_READ`, `bpf_core_field_exists` for
-   kernel version portability
-2. **Tail calls** -- programme arrays, cross-programme state via maps
-3. **Per-CPU map semantics** -- model the no-contention guarantee
-4. **Bounded loop verification** -- prove termination via Pulse invariants
-5. **`bpf_loop` callback support** -- model the callback pattern
-6. **Additional programme types** -- XDP, TC, fentry/fexit
-7. **Real separation logic proofs** -- move beyond `admit()` for library
-   operations; prove resource linearity formally
+1. **CO-RE existence checks** -- `bpf_core_type_exists`,
+   `bpf_core_field_exists` for kernel version portability
+2. **Bounded loop support** -- verify Pulse `while` loops extract
+   to BPF-verifier-friendly bounded `for` loops
+3. **LPM trie maps** -- `define_lpm_trie_map` for path prefix matching
+4. **Per-CPU map semantics** -- model the no-contention guarantee
+5. **Tail calls** -- programme arrays, cross-programme state via maps
+6. **`bpf_loop` callback support** -- model the callback pattern
+7. **Additional programme types** -- XDP, TC, fentry/fexit
+8. **Real separation logic proofs** -- move beyond `admit()` for
+   library operations; prove resource linearity formally
+9. **Process info helpers** -- `bpf_get_current_task_btf`,
+   `bpf_get_current_comm`, lineage traversal
 
 ## Key Risks (Updated)
 
 1. ~~**Karamel extraction for BPF C**~~ -- RESOLVED. The ExtractPulseBPF
    plugin handles all BPF-specific translation. No post-processing needed.
 
-2. **Pulse C types vs BPF struct layout** -- still relevant for Phase 3.
-   FACT's event structs need exact layout matching. May need to use
-   `Pulse.C.Types.Struct` or manual field offsets.
+2. ~~**BPF map definitions**~~ -- RESOLVED. The Verbatim flag + Prologue
+   mechanism emits correct BTF struct definitions in `.maps` sections.
 
-3. **Map value lifetime** -- the separation logic models this correctly
-   (`map_value` permission must be released). Extraction preserves the
-   pattern via pointer null-check + inline use.
+3. **CO-RE / BPF_PROG support** -- the main remaining gap for real-world
+   programmes. `BPF_CORE_READ` chains and `BPF_PROG` macro invocations
+   have no direct Krml AST representation. Will need extraction plugin
+   hooks to emit these as formatted C text.
 
-4. **OCaml Marshal constructor alignment** -- the Krml flag type in F*
+4. **Pulse prover limitations** -- nested `if/else` branches after
+   `map_lookup` (which returns conditional `slprop`) can confuse the
+   prover. Workaround: extract null-check logic into separate helper
+   functions to isolate the proof context.
+
+5. **OCaml Marshal constructor alignment** -- the Krml flag type in F*
    must have constructor indices matching Karamel's `Common.flag` type.
    Padding constructors are used to maintain alignment. This is fragile
    and should be documented as a maintenance constraint.
 
-5. **Verification performance** -- not yet tested on large programmes.
-   Phase 3 will be the first real stress test.
+6. **Verification performance** -- the file monitor example verifies
+   in seconds, but larger programmes with many map operations may
+   stress F*'s normaliser.
 
 ## Lessons Learned
 
