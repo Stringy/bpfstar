@@ -18,7 +18,13 @@ let bpf_exist    : UInt64.t = 2uL    // update only, fail if missing
 let bpf_rb_no_wakeup  : UInt64.t = 1uL
 let bpf_rb_force_wakeup : UInt64.t = 2uL
 
-(* BPF helper return: 0 on success, negative on error *)
+(* BPF local storage flags *)
+let bpf_local_storage_get_f_create : UInt64.t = 1uL
+
+(* BPF helper return: 0 on success, negative on error.
+   Some helpers (probe_read_*_str, d_path, get_stack) return
+   positive values on success -- use per-helper postconditions
+   rather than is_ok/is_err for those. *)
 type bpf_ret = Int32.t
 
 (* Opaque kernel pointer type for BPF programme context arguments.
@@ -29,6 +35,9 @@ val ctx_ptr : Type0
 
 let bpf_ok : bpf_ret = 0l
 
-(* Predicate for successful BPF helper returns *)
+(* Predicate for successful BPF helper returns (standard convention) *)
 let is_ok (r: bpf_ret) : bool = Int32.v r = 0
 let is_err (r: bpf_ret) : bool = Int32.v r < 0
+
+(* Predicate for positive-success returns (str/path/stack helpers) *)
+let is_positive (r: bpf_ret) : bool = Int32.v r > 0

@@ -2,6 +2,7 @@ PULSE_ROOT ?= ../../fstar/pulse
 BPFSTAR_ROOT ?= ../..
 OUTPUT_DIR ?= _output
 OTHERFLAGS += --include $(BPFSTAR_ROOT)/lib
+OTHERFLAGS += --include $(BPFSTAR_ROOT)/lib/_cache
 OTHERFLAGS += --warn_error -353
 
 # Trigger C extraction for FileMonitor.fst
