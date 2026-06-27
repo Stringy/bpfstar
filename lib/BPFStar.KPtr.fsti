@@ -21,6 +21,8 @@ type kernel_struct =
   | KXdpMd        (* struct xdp_md *)
   | KPtRegs       (* struct pt_regs *)
   | KLinuxBinprm  (* struct linux_binprm *)
+  | KSuperBlock   (* struct super_block *)
+  | KCharBuf      (* char[] -- for string fields *)
 
 (* Opaque kernel pointer, tagged by the struct it points to.
    Cannot be dereferenced in Pulse -- only passed to helpers

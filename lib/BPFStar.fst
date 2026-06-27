@@ -16,3 +16,4 @@ include BPFStar.Helpers
 include BPFStar.Helpers.Storage
 include BPFStar.Helpers.Net
 include BPFStar.SpinLock
+include BPFStar.Core

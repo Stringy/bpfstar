@@ -13,8 +13,14 @@
    net/core/filter.c, kernel/trace/bpf_trace.c, etc). *)
 module BPFStar.ProgType
 
-(* --- Programme types --- *)
+open FStar.Tactics.Typeclasses
 
+(* --- Programme types ---
+   Erasable: only used as a phantom index for capability
+   constraints. Erased during extraction -- no C output. *)
+
+[@@erasable]
+noeq
 type prog_type =
   | Kprobe
   | Tracepoint
@@ -33,51 +39,65 @@ type prog_type =
 
    Each class represents a group of helpers with identical
    programme-type availability. Helpers declare which capability
-   they require; programme entry points provide the instance. *)
+   they require; programme entry points provide the instance.
+
+   All classes are erasable: they exist only for type checking
+   and are erased during extraction. The extraction plugin never
+   sees capability arguments. *)
 
 (* Tracing family: kprobe, tracepoint, raw_tracepoint,
    fentry, fexit, LSM.
    Covers: bpf_probe_read (legacy), bpf_probe_write_user,
    bpf_get_stack, bpf_get_stackid, bpf_get_attach_cookie. *)
-class can_trace (p: prog_type) = { _ct: unit }
+[@@erasable; tcclass]
+noeq type can_trace (p: prog_type) = { _ct: unit }
 
 (* Advanced tracing: fentry, fexit, LSM.
    Covers: bpf_d_path. *)
-class can_adv_trace (p: prog_type) = { _cat: unit }
+[@@erasable; tcclass]
+noeq type can_adv_trace (p: prog_type) = { _cat: unit }
 
 (* Function IP access: kprobe, fentry, fexit.
    Covers: bpf_get_func_ip. *)
-class can_func_ip (p: prog_type) = { _cf: unit }
+[@@erasable; tcclass]
+noeq type can_func_ip (p: prog_type) = { _cf: unit }
 
 (* LSM-exclusive helpers.
    Covers: bpf_inode_storage_get/delete,
    bpf_ima_inode_hash, bpf_ima_file_hash. *)
-class can_lsm (p: prog_type) = { _cl: unit }
+[@@erasable; tcclass]
+noeq type can_lsm (p: prog_type) = { _cl: unit }
 
 (* Kprobe-exclusive helpers.
    Covers: bpf_override_return. *)
-class can_kprobe (p: prog_type) = { _ck: unit }
+[@@erasable; tcclass]
+noeq type can_kprobe (p: prog_type) = { _ck: unit }
 
 (* Socket storage access: TC, cgroup, sock_ops, sk_msg,
    LSM, fentry, fexit.
    Covers: bpf_sk_storage_get/delete. *)
-class can_sk_storage (p: prog_type) = { _cs: unit }
+[@@erasable; tcclass]
+noeq type can_sk_storage (p: prog_type) = { _cs: unit }
 
 (* XDP-exclusive helpers.
    Covers: bpf_xdp_adjust_head/tail/meta,
    bpf_redirect_map. *)
-class can_xdp (p: prog_type) = { _cx: unit }
+[@@erasable; tcclass]
+noeq type can_xdp (p: prog_type) = { _cx: unit }
 
 (* TC-exclusive helpers.
    Covers: bpf_skb_store_bytes, bpf_skb_change_proto/head/tail,
    bpf_skb_pull_data, bpf_skb_adjust_room,
    bpf_l3_csum_replace, bpf_l4_csum_replace. *)
-class can_tc (p: prog_type) = { _ctc: unit }
+[@@erasable; tcclass]
+noeq type can_tc (p: prog_type) = { _ctc: unit }
 
 (* Network forwarding: XDP + TC.
    Covers: bpf_redirect, bpf_fib_lookup, bpf_csum_diff. *)
-class can_net_fwd (p: prog_type) = { _cn: unit }
+[@@erasable; tcclass]
+noeq type can_net_fwd (p: prog_type) = { _cn: unit }
 
 (* SKB read access: TC + socket_filter.
    Covers: bpf_skb_load_bytes. *)
-class can_skb_read (p: prog_type) = { _csr: unit }
+[@@erasable; tcclass]
+noeq type can_skb_read (p: prog_type) = { _csr: unit }
